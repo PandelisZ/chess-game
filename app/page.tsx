@@ -1,138 +1,146 @@
 'use client';
 
 import { useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
+import Phaser from "phaser";
 
-const Phaser = dynamic(() => import("phaser"), { ssr: false });
+class ChessScene extends Phaser.Scene {
+  private selectedPiece: Phaser.GameObjects.Image | null = null;
+  private board: (Phaser.GameObjects.Image | null)[][] = [];
+  private turn: string = 'White';
+  private timerEvent!: Phaser.Time.TimerEvent;
+  private setCurrentTurn: React.Dispatch<React.SetStateAction<string>>;
+  private setTurnTime: React.Dispatch<React.SetStateAction<number>>;
+
+  constructor(
+    setCurrentTurn: React.Dispatch<React.SetStateAction<string>>, 
+    setTurnTime: React.Dispatch<React.SetStateAction<number>>
+  ) {
+    super({ key: "ChessScene" });
+    this.setCurrentTurn = setCurrentTurn;
+    this.setTurnTime = setTurnTime;
+  }
+
+  preload(): void {
+    this.load.image('board', '/assets/board.png');
+    const pieces = ['wp', 'wr', 'wn', 'wb', 'wq', 'wk', 'bp', 'br', 'bn', 'bb', 'bq', 'bk'];
+    pieces.forEach(piece => {
+      this.load.image(piece, `/assets/${piece}.png`);
+    });
+  }
+
+  create(): void {
+    this.add.image(400, 400, 'board');
+
+    const initialSetup = [
+      ['br', 'bn', 'bb', 'bq', 'bk', 'bb', 'bn', 'br'],
+      ['bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp'],
+      ['', '', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', '', ''],
+      ['wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp'],
+      ['wr', 'wn', 'wb', 'wq', 'wk', 'wb', 'wn', 'wr']
+    ];
+
+    for (let y = 0; y < 8; y++) {
+      this.board[y] = [];
+      for (let x = 0; x < 8; x++) {
+        const pieceKey = initialSetup[y][x];
+        if (pieceKey) {
+          const piece = this.add.image(100 + x * 80, 100 + y * 80, pieceKey).setInteractive();
+          piece.setData('type', pieceKey);
+          piece.setData('color', pieceKey[0] === 'w' ? 'White' : 'Black');
+          piece.setData('position', { x, y });
+          this.input.setDraggable(piece);
+          this.board[y][x] = piece;
+        } else {
+          this.board[y][x] = null;
+        }
+      }
+    }
+
+    this.input.on('dragstart', (pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Image) => {
+      if (gameObject.getData('color') !== this.turn) {
+        pointer.event.preventDefault();
+        return;
+      }
+      this.selectedPiece = gameObject;
+    });
+
+    this.input.on('drag', (_: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Image, dragX: number, dragY: number) => {
+      gameObject.x = dragX;
+      gameObject.y = dragY;
+    });
+
+    this.input.on('dragend', (_: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Image) => {
+      const x = Math.floor((gameObject.x - 60) / 80);
+      const y = Math.floor((gameObject.y - 60) / 80);
+
+      const oldPos = gameObject.getData('position');
+
+      if (x < 0 || x > 7 || y < 0 || y > 7) {
+        gameObject.x = 100 + oldPos.x * 80;
+        gameObject.y = 100 + oldPos.y * 80;
+        return;
+      }
+
+      const targetPiece = this.board[y][x];
+
+      if (targetPiece && targetPiece.getData('color') === this.turn) {
+        gameObject.x = 100 + oldPos.x * 80;
+        gameObject.y = 100 + oldPos.y * 80;
+        return;
+      }
+
+      if (targetPiece) {
+        targetPiece.destroy();
+      }
+
+      this.board[oldPos.y][oldPos.x] = null;
+      this.board[y][x] = gameObject;
+      gameObject.setData('position', { x, y });
+      gameObject.x = 100 + x * 80;
+      gameObject.y = 100 + y * 80;
+
+      this.endTurn();
+    });
+
+    this.timerEvent = this.time.addEvent({
+      delay: 1000,
+      callback: () => {
+        this.setTurnTime((prev) => {
+          if (prev <= 1) {
+            this.endTurn();
+            return 60;
+          }
+          return prev - 1;
+        });
+      },
+      loop: true
+    });
+  }
+
+  endTurn() {
+    this.turn = this.turn === 'White' ? 'Black' : 'White';
+    this.setCurrentTurn(this.turn);
+    this.setTurnTime(60);
+  }
+}
 
 export default function Home() {
   const gameRef = useRef<HTMLDivElement>(null);
   const phaserGame = useRef<Phaser.Game | null>(null);
-  const [currentTurn, setCurrentTurn] = useState<string>('White');
-  const [turnTime, setTurnTime] = useState<number>(60);
+  const [currentTurn, setCurrentTurn] = useState('White');
+  const [turnTime, setTurnTime] = useState(60);
 
   useEffect(() => {
-    if (phaserGame.current === null) {
-      class ChessScene extends Phaser.Scene {
-        private selectedPiece: Phaser.GameObjects.Image | null = null;
-        private board: Phaser.GameObjects.Image[][] = [];
-        private turn: string = 'White';
-        private timerEvent!: Phaser.Time.TimerEvent;
-
-        constructor() {
-          super({ key: "ChessScene" });
-        }
-
-        preload(): void {
-          this.load.image('board', '/assets/board.png');
-          const pieces = ['wp', 'wr', 'wn', 'wb', 'wq', 'wk', 'bp', 'br', 'bn', 'bb', 'bq', 'bk'];
-          pieces.forEach(piece => {
-            this.load.image(piece, `/assets/${piece}.png`);
-          });
-        }
-
-        create(): void {
-          this.add.image(400, 400, 'board');
-          const initialSetup = [
-            ['br', 'bn', 'bb', 'bq', 'bk', 'bb', 'bn', 'br'],
-            ['bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp', 'bp'],
-            ['', '', '', '', '', '', '', ''],
-            ['', '', '', '', '', '', '', ''],
-            ['', '', '', '', '', '', '', ''],
-            ['', '', '', '', '', '', '', ''],
-            ['wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp', 'wp'],
-            ['wr', 'wn', 'wb', 'wq', 'wk', 'wb', 'wn', 'wr']
-          ];
-
-          for (let y = 0; y < 8; y++) {
-            this.board[y] = [];
-            for (let x = 0; x < 8; x++) {
-              const pieceKey = initialSetup[y][x];
-              if (pieceKey) {
-                const piece = this.add.image(100 + x * 80, 100 + y * 80, pieceKey).setInteractive();
-                piece.setData('type', pieceKey);
-                piece.setData('color', pieceKey[0] === 'w' ? 'White' : 'Black');
-                piece.setData('position', { x, y });
-                this.input.setDraggable(piece);
-                this.board[y][x] = piece;
-              }
-            }
-          }
-
-          this.input.on('dragstart', (pointer: any, gameObject: Phaser.GameObjects.Image) => {
-            if (gameObject.getData('color') !== this.turn) {
-              pointer.event.preventDefault();
-              return;
-            }
-            this.selectedPiece = gameObject;
-          });
-
-          this.input.on('drag', (pointer: any, gameObject: Phaser.GameObjects.Image, dragX: number, dragY: number) => {
-            gameObject.x = dragX;
-            gameObject.y = dragY;
-          });
-
-          this.input.on('dragend', (_, gameObject: Phaser.GameObjects.Image) => {
-            const x = Math.floor((gameObject.x - 60) / 80);
-            const y = Math.floor((gameObject.y - 60) / 80);
-
-            if (x < 0 || x > 7 || y < 0 || y > 7) {
-              const pos = gameObject.getData('position');
-              gameObject.x = 100 + pos.x * 80;
-              gameObject.y = 100 + pos.y * 80;
-              return;
-            }
-
-            const oldPos = gameObject.getData('position');
-            const targetPiece = this.board[y][x];
-
-            if (targetPiece && targetPiece.getData('color') === this.turn) {
-              gameObject.x = 100 + oldPos.x * 80;
-              gameObject.y = 100 + oldPos.y * 80;
-              return;
-            }
-
-            if (targetPiece) {
-              targetPiece.destroy();
-            }
-
-            this.board[oldPos.y][oldPos.x] = undefined!;
-            this.board[y][x] = gameObject;
-            gameObject.setData('position', { x, y });
-            gameObject.x = 100 + x * 80;
-            gameObject.y = 100 + y * 80;
-
-            this.endTurn();
-          });
-
-          this.timerEvent = this.time.addEvent({
-            delay: 1000,
-            callback: () => {
-              setTurnTime(prev => {
-                if (prev <= 1) {
-                  this.endTurn();
-                  return 60;
-                }
-                return prev - 1;
-              });
-            },
-            loop: true
-          });
-        }
-
-        endTurn() {
-          this.turn = this.turn === 'White' ? 'Black' : 'White';
-          setCurrentTurn(this.turn);
-          setTurnTime(60);
-        }
-      }
-
-      const config = {
+    if (!phaserGame.current && gameRef.current) {
+      const config: Phaser.Types.Core.GameConfig = {
         type: Phaser.AUTO,
         width: 800,
         height: 800,
-        parent: gameRef.current!,
-        scene: [ChessScene],
+        parent: gameRef.current,
+        scene: new ChessScene(setCurrentTurn, setTurnTime),
         backgroundColor: '#ffffff'
       };
 
