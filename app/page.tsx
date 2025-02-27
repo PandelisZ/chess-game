@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from "react";
-import Phaser from "phaser";
+import * as Phaser from 'phaser';
 
 class ChessScene extends Phaser.Scene {
   private selectedPiece: Phaser.GameObjects.Image | null = null;
@@ -12,7 +12,7 @@ class ChessScene extends Phaser.Scene {
   private setTurnTime: React.Dispatch<React.SetStateAction<number>>;
 
   constructor(
-    setCurrentTurn: React.Dispatch<React.SetStateAction<string>>, 
+    setCurrentTurn: React.Dispatch<React.SetStateAction<string>>,
     setTurnTime: React.Dispatch<React.SetStateAction<number>>
   ) {
     super({ key: "ChessScene" });
