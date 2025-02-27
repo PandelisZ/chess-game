@@ -2,20 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import type PhaserType from "phaser";
 
-const Phaser = dynamic(() => import("phaser"), { ssr: false });
+const Phaser = dynamic(() => import("phaser").then(mod => mod.default), { ssr: false });
 
 export default function Home() {
   const gameRef = useRef<HTMLDivElement>(null);
-  const phaserGame = useRef<Phaser.Game | null>(null);
+  const phaserGame = useRef<PhaserType.Game | null>(null);
   const [currentTurn, setCurrentTurn] = useState<string>('White');
   const [turnTime, setTurnTime] = useState<number>(60);
 
   useEffect(() => {
-    if (phaserGame.current === null) {
+    if (phaserGame.current === null && gameRef.current) {
       class ChessScene extends Phaser.Scene {
         private selectedPiece: Phaser.GameObjects.Image | null = null;
-        private board: Phaser.GameObjects.Image[][] = [];
+        private board: (Phaser.GameObjects.Image | null)[][] = [];
         private turn: string = 'White';
         private timerEvent!: Phaser.Time.TimerEvent;
 
@@ -55,11 +56,13 @@ export default function Home() {
                 piece.setData('position', { x, y });
                 this.input.setDraggable(piece);
                 this.board[y][x] = piece;
+              } else {
+                this.board[y][x] = null;
               }
             }
           }
 
-          this.input.on('dragstart', (pointer: any, gameObject: Phaser.GameObjects.Image) => {
+          this.input.on('dragstart', (pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Image) => {
             if (gameObject.getData('color') !== this.turn) {
               pointer.event.preventDefault();
               return;
@@ -67,23 +70,23 @@ export default function Home() {
             this.selectedPiece = gameObject;
           });
 
-          this.input.on('drag', (pointer: any, gameObject: Phaser.GameObjects.Image, dragX: number, dragY: number) => {
+          this.input.on('drag', (_: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Image, dragX: number, dragY: number) => {
             gameObject.x = dragX;
             gameObject.y = dragY;
           });
 
-          this.input.on('dragend', (_, gameObject: Phaser.GameObjects.Image) => {
+          this.input.on('dragend', (_: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.Image) => {
             const x = Math.floor((gameObject.x - 60) / 80);
             const y = Math.floor((gameObject.y - 60) / 80);
 
+            const oldPos = gameObject.getData('position');
+
             if (x < 0 || x > 7 || y < 0 || y > 7) {
-              const pos = gameObject.getData('position');
-              gameObject.x = 100 + pos.x * 80;
-              gameObject.y = 100 + pos.y * 80;
+              gameObject.x = 100 + oldPos.x * 80;
+              gameObject.y = 100 + oldPos.y * 80;
               return;
             }
 
-            const oldPos = gameObject.getData('position');
             const targetPiece = this.board[y][x];
 
             if (targetPiece && targetPiece.getData('color') === this.turn) {
@@ -96,7 +99,7 @@ export default function Home() {
               targetPiece.destroy();
             }
 
-            this.board[oldPos.y][oldPos.x] = undefined!;
+            this.board[oldPos.y][oldPos.x] = null;
             this.board[y][x] = gameObject;
             gameObject.setData('position', { x, y });
             gameObject.x = 100 + x * 80;
@@ -127,16 +130,16 @@ export default function Home() {
         }
       }
 
-      const config = {
+      const config: PhaserType.Types.Core.GameConfig = {
         type: Phaser.AUTO,
         width: 800,
         height: 800,
-        parent: gameRef.current!,
+        parent: gameRef.current,
         scene: [ChessScene],
         backgroundColor: '#ffffff'
       };
 
-      phaserGame.current = new Phaser.Game(config);
+      phaserGame.current = new Phaser(config);
     }
 
     return () => {
