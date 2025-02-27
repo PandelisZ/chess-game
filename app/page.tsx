@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from "react";
-import * as Phaser from 'phaser';
+import * as Phaser from "phaser";
 
 class ChessScene extends Phaser.Scene {
   private selectedPiece: Phaser.GameObjects.Image | null = null;
@@ -21,10 +21,10 @@ class ChessScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.image('board', '/assets/board.png');
+    this.load.image('board', '/board.png');
     const pieces = ['wp', 'wr', 'wn', 'wb', 'wq', 'wk', 'bp', 'br', 'bn', 'bb', 'bq', 'bk'];
     pieces.forEach(piece => {
-      this.load.image(piece, `/assets/${piece}.png`);
+      this.load.image(piece, `/${piece}.png`);
     });
   }
 
