@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { Chess, Square } from "chess.js";
+import { Chess, Square, Move } from "chess.js";
 const files = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const ranks = [8, 7, 6, 5, 4, 3, 2, 1];
 const pieceUnicode: Record<string, string> = {
@@ -8,64 +8,62 @@ const pieceUnicode: Record<string, string> = {
   k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟"
 };
 function ChessGame() {
-  // Use chess.js under the hood for logic
   const [game, setGame] = useState(() => new Chess());
   const [selected, setSelected] = useState<Square | null>(null);
-  const [moves, setMoves] = useState<string[]>([]);
+  const [moves, setMoves] = useState<Move[]>([]);
   const [promotion, setPromotion] = useState<{from: Square, to: Square} | null>(null);
-  const board = game.board();
   function handleSquareClick(file: string, rank: number) {
     const square: Square = (file + rank) as Square;
-    // Handle promotion dialog
-    if (promotion) {
-      doMove(promotion.from, promotion.to, square as any);
-      setPromotion(null);
-      setSelected(null);
-      return;
-    }
-    // Selecting a piece to move
+    if (promotion) return; // Don't let board interaction during promotion choice
+    // If nothing selected: try to select a piece of the player's color.
     if (!selected) {
       const piece = game.get(square);
       if (piece && piece.color === game.turn()) {
         setSelected(square);
-        const possible = game.moves({ square, verbose: true });
-        setMoves(possible.map((m) => m.to));
+        const possible = game.moves({ square, verbose: true }) as Move[];
+        setMoves(possible);
       }
       return;
     }
-    // Trying to move selected piece to clicked square
-    if (selected === square) {
-      // Deselect
+    // If already selected, and clicking a piece of same color, change selection
+    const clickedPiece = game.get(square);
+    if (clickedPiece && clickedPiece.color === game.turn() && selected !== square) {
+      setSelected(square);
+      const possible = game.moves({ square, verbose: true }) as Move[];
+      setMoves(possible);
+      return;
+    }
+    // Are we trying to move the selected piece to this square?
+    const move = moves.find(m => m.to === square);
+    if (move) {
+      // Promotion required?
+      if (move.flags.includes('p')) {
+        // Open promotion dialog (let user pick type)
+        setPromotion({ from: move.from, to: move.to });
+        return;
+      }
+      // Else, just make the move
+      doMove(move.from, move.to, move.promotion);
       setSelected(null);
       setMoves([]);
       return;
     }
-    // If this move is not legal, ignore
-    if (!moves.includes(square)) return;
-    // Promotion required
-    const piece = game.get(selected);
-    if (
-        piece && piece.type === "p"
-        && ((piece.color === "w" && square[1] === "8") || (piece.color === "b" && square[1] === "1"))
-    ) {
-      // Open promotion selection
-      setPromotion({ from: selected, to: square });
-      return;
-    }
-    doMove(selected, square);
+    // Deselect if clicking elsewhere (invalid)
     setSelected(null);
     setMoves([]);
   }
-  function doMove(from: Square, to: Square, promotionPiece?: string) {
-    const move = {
-      from,
-      to,
-      promotion: promotionPiece || "q"
-    };
+  function doMove(from: Square, to: Square, promotionType?: string) {
     const newGame = new Chess(game.fen());
-    const result = newGame.move(move);
-    if (result) {
+    const moveObj = { from, to } as any;
+    if (promotionType) {
+      moveObj.promotion = promotionType;
+    }
+    // Try move:
+    if (newGame.move(moveObj)) {
       setGame(newGame);
+      setPromotion(null);
+      setSelected(null);
+      setMoves([]);
     }
   }
   function renderPromotionDialog() {
@@ -77,7 +75,8 @@ function ChessGame() {
     return (
       <div style={{
         position:"absolute", left:0, top:0, width:"100%", height:"100%",
-        background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"center", justifyContent:"center"
+        background:"rgba(0,0,0,0.6)", display:"flex", alignItems:"center", justifyContent:"center",
+        zIndex:10
       }} >
         <div style={{background:"#fff", padding:20, borderRadius:8, boxShadow:"0 2px 8px #0008"}}>
           <div>Choose promotion piece:</div>
@@ -85,7 +84,12 @@ function ChessGame() {
             {options.map(opt =>
               <button key={opt.p}
                 style={{border:"none", fontSize:"2rem", background:"transparent", cursor:"pointer"}}
-                onClick={()=>doMove(promotion.from, promotion.to, opt.p as any)}
+                onClick={() => {
+                  doMove(promotion.from, promotion.to, opt.p);
+                  setPromotion(null);
+                  setSelected(null);
+                  setMoves([]);
+                }}
               >{opt.u}</button>
             )}
           </div>
@@ -114,6 +118,10 @@ function ChessGame() {
     setMoves([]);
     setPromotion(null);
   }
+  // For move highlight:
+  function isLegalDest(square: Square) {
+    return !!moves.find(m => m.to === square);
+  }
   return (
     <div style={{display:"flex", flexDirection:"column", alignItems:"center", minHeight: "100vh", paddingTop: 48}}>
       <div style={{fontSize: "1.5rem", fontWeight:"bold", marginBottom:12}}>Interactive Chess</div>
@@ -121,9 +129,7 @@ function ChessGame() {
         border: "4px solid #333", borderRadius: 8, position:"relative",
         boxShadow: "2px 2px 14px #0004", background:"#ddd"
       }}>
-        <div style={{position:"absolute", zIndex:2, width:"100%", height:"100%"}}>
-          {renderPromotionDialog()}
-        </div>
+        {renderPromotionDialog()}
         <div style={{
           display:"grid", gridTemplateColumns:"repeat(8, 48px)", gridTemplateRows:"repeat(8, 48px)"
         }}>
@@ -132,14 +138,14 @@ function ChessGame() {
               const square = (file + rank) as Square;
               const piece = game.get(square);
               const selectedSq = selected === square;
-              const legalDestination = moves.includes(square);
+              const legalDestination = isLegalDest(square);
               const isLight = (files.indexOf(file) + ranks.indexOf(rank)) % 2 === 1;
               return (
                 <div
                   key={square}
                   onClick={()=>handleSquareClick(file, rank)}
                   style={{
-                    width:48, height:48, userSelect:"none", cursor: piece && game.turn() === piece.color && !promotion ? "pointer":"default",
+                    width:48, height:48, userSelect:"none", cursor: (!promotion && (legalDestination || (piece && piece.color === game.turn()))) ? "pointer":"default",
                     background: selectedSq
                       ? "#fd6"
                       : legalDestination
@@ -151,7 +157,7 @@ function ChessGame() {
                     fontSize:32, fontWeight:"bold", textAlign:"center", lineHeight:"48px"
                   }}
                 >
-                  {piece ? pieceUnicode[piece.type.toUpperCase() === piece.type ? piece.type : piece.type.toLowerCase() === piece.type ? piece.type : piece.type] || pieceUnicode[piece.color === "w" ? piece.type.toUpperCase() : piece.type] : ""}
+                  {piece ? pieceUnicode[(piece.color === "w" ? piece.type.toUpperCase() : piece.type)] : ""}
                 </div>
               );
             })
