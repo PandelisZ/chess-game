@@ -84,7 +84,7 @@ function ChessGame() {
           <div style={{display:"flex", fontSize:36, gap:18, marginTop:10}}>
             {options.map(opt =>
               <button key={opt.p}
-                style={{border:"none", size:"2rem", background:"transparent", cursor:"pointer"}}
+                style={{border:"none", fontSize:"2rem", background:"transparent", cursor:"pointer"}}
                 onClick={()=>doMove(promotion.from, promotion.to, opt.p as any)}
               >{opt.u}</button>
             )}
